@@ -9,10 +9,11 @@ import torchvision.utils as vutils
 from torchvision import transforms
 import matplotlib.pyplot as plt
 
-
+# gradient penalty for discriminator based on wgan-gp paper "Improved Training of Wasserstein GANs" (https://arxiv.org/abs/1704.00028)
 def gradient_penalty(disc, real_images, fake_images, step, alpha, device="cpu"):
     bs, channels, height, width = real_images.shape
     eps = torch.rand(bs, 1, 1, 1).to(device).repeat(1, channels, height, width)
+    # merge fake and real images
     merged_images = real_images * eps + fake_images * (1 - eps)
     merged_predict = disc(merged_images, step=step, alpha=alpha)
     gradient_penalty = torch.autograd.grad(
@@ -25,14 +26,6 @@ def gradient_penalty(disc, real_images, fake_images, step, alpha, device="cpu"):
     gradient_penalty = gradient_penalty.norm(2, dim=1)
     gradient_penalty = torch.mean((gradient_penalty - 1) ** 2)
     return gradient_penalty
-
-def weights_init(layer):
-    if type(layer) in [nn.Conv2d, nn.ConvTranspose2d]:
-        nn.init.kaiming_normal_(layer.weight)
-    if type(layer) == nn.BatchNorm2d:
-        nn.init.normal_(layer.weight.data, 1.0, 0.02)
-    if type(layer) == nn.Linear:
-        nn.init.xavier_normal_(layer.weight)
 
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -51,7 +44,7 @@ def new_dataloader(batch_size, img_size):
                                 transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
                                 transforms.RandomHorizontalFlip(p=0.15),
                                ]))
-    loader = DataLoader(data, batch_size=batch_size, shuffle=True, num_workers=4)
+    loader = DataLoader(data, batch_size=batch_size, shuffle=True, num_workers=3)
     return loader
 
 def format_large_nums(num):

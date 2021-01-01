@@ -61,6 +61,8 @@ class Generator(nn.Module):
                             nn.ConvTranspose2d(in_channels=64, out_channels=3, kernel_size=1, stride=1, bias=gen_bias), #16x16
                             nn.ConvTranspose2d(in_channels=32, out_channels=3, kernel_size=1, stride=1, bias=gen_bias), #32x32
                             nn.ConvTranspose2d(in_channels=16, out_channels=3, kernel_size=1, stride=1, bias=gen_bias)]) #64x64
+
+        self.apply(self.weights_init)
         
     def forward(self, x, step, alpha):
         x = x.view(-1, self.noise_dim, 1, 1)
@@ -78,3 +80,11 @@ class Generator(nn.Module):
         if 0 <= alpha < 1 and i == step:
                 x = (1 - alpha) * prev_upscaled + alpha * x
         return x
+
+    def weights_init(self, layer):
+        if type(layer) in [nn.Conv2d, nn.ConvTranspose2d]:
+            nn.init.kaiming_normal_(layer.weight)
+        if type(layer) == nn.BatchNorm2d:
+            nn.init.normal_(layer.weight.data, 1.0, 0.02)
+        if type(layer) == nn.Linear:
+            nn.init.xavier_normal_(layer.weight)

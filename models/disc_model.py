@@ -87,8 +87,9 @@ class Discriminator(nn.Module):
             InpBlock(out_channels=128),
             InpBlock(out_channels=64),
             InpBlock(out_channels=32),
-            InpBlock(out_channels=16)
-        ])
+            InpBlock(out_channels=16)])
+
+        self.apply(self.weights_init)
         
     def forward(self, inp, step, alpha):
         x = self.fromrgb[step](inp)
@@ -105,3 +106,11 @@ class Discriminator(nn.Module):
                         x = (1 - alpha) * fade_val + alpha * x
         x = self.outp(x)
         return x
+    
+    def weights_init(self, layer):
+            if type(layer) in [nn.Conv2d, nn.ConvTranspose2d]:
+                nn.init.kaiming_normal_(layer.weight)
+            if type(layer) == nn.BatchNorm2d:
+                nn.init.normal_(layer.weight.data, 1.0, 0.02)
+            if type(layer) == nn.Linear:
+                nn.init.xavier_normal_(layer.weight)

@@ -39,11 +39,10 @@ disc_train_count = 4
 
 # model definitions
 generator = Generator(noise_dim).to(device)
-generator.apply(weights_init)
 g_optimizer = optim.Adam(generator.parameters(), lr=lr[step], betas=betas)
 
 discriminator = Discriminator().to(device)
-discriminator.apply(weights_init)
+#discriminator.apply(weights_init)
 d_optimizer = optim.Adam(discriminator.parameters(), lr=lr[step], betas=betas)
         
 # fixed noise for showing intermediate training progress
@@ -89,8 +88,8 @@ def train(iterations=1_000_000):
                 if step > max_steps:
                     step = max_steps 
                     break
-                adjust_lr(d_optimizer, lr)
-                adjust_lr(g_optimizer, lr)
+                adjust_lr(d_optimizer, lr[step])
+                adjust_lr(g_optimizer, lr[step])
                 data = new_dataloader(batch_size[step], curr_res)
                 mfid_batch = next(iter(data))[0].cuda().float()
                 loader = iter(data)
