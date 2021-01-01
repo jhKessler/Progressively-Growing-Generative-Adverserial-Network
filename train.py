@@ -31,9 +31,9 @@ step = 1
 max_steps = 4
 fade_size = 800_000
 lr = [0.001, 0.002, 0.004, 0.006, 0.008]
-phase_size = 2_500_000
+phase_size = 3_000_000
 GRAD_VAL = 10
-# training count of discriminator in respect to generator
+# training count ratio of discriminator training iterations per generator training iteration
 disc_train_count = 4
 
 
@@ -73,75 +73,76 @@ def train(iterations=1_000_000):
     print(f"Training on {torch.cuda.get_device_name(device)}")
     print("Starting Training Loop...")
     for current_iteration in range(iterations):
-            curr_res = get_resolution(step)
-            # current fade value for last block
-            alpha = min([1, (used_samples + 1) /  fade_size]) if step > 1 else 1
-            # switch to next phase after current phase is completed
-            if used_samples > phase_size:
-                step_time_taken = (time.time() - step_start) // 60
-                step_start = time.time()
-                print(f"Time taken for resolution {curr_res}x{curr_res} is {step_time_taken} minutes, Used Samples: {used_samples}, loss_MFID: {calcMFID(mfid_batch)}")
+        gc.collect()
+        curr_res = get_resolution(step)
+        # current fade value for last block
+        alpha = min([1, (used_samples + 1) /  fade_size]) if step > 1 else 1
+        # switch to next phase after current phase is completed
+        if used_samples > (phase_size if step != 1 else 2_000_000):
+            step_time_taken = (time.time() - step_start) // 60
+            step_start = time.time()
+            print(f"Time taken for resolution {curr_res}x{curr_res} is {step_time_taken} minutes, Used Samples: {used_samples}, loss_MFID: {calcMFID(mfid_batch)}")
+            generate_and_save_images(current_iteration, preview_noise, generator, alpha, step)
+            used_samples = 0
+            step += 1
+            # break training loop after last step (64x64) is completed
+            if step > max_steps:
+                step = max_steps 
+                break
+            adjust_lr(d_optimizer, lr[step])
+            adjust_lr(g_optimizer, lr[step])
+            data = new_dataloader(batch_size[step], curr_res*2)
+            mfid_batch = next(iter(data))[0].cuda().float()
+            loader = iter(data)
+
+        try:
+            batch = next(loader)
+        except (NameError, StopIteration):
+            loader = iter(data)
+            batch = next(loader)
+
+        # train discriminator on real images
+        real_images = batch[0].cuda().float()
+        current_bs = real_images.shape[0]
+        real_predict = discriminator(real_images, step=step, alpha=alpha).mean()
+
+        # random noise vector sampling values of gaussian distribution
+        gen_noise = torch.randn(current_bs, noise_dim).cuda()
+        gen_imgs = generator(gen_noise, step=step, alpha=alpha)
+
+        fake_predict = discriminator(gen_imgs, step=step, alpha=alpha).mean()
+
+        # wgan-gp loss for discriminator - maximize (d(r) - d(f)) -> wasserstein distance
+        gp = gradient_penalty(discriminator, real_images, gen_imgs, step, device=device, alpha=alpha)
+        disc_loss = -(real_predict - fake_predict) + (GRAD_VAL * gp)
+
+        discriminator.zero_grad()
+        if current_iteration % disc_train_count == 0:
+            disc_loss.backward(retain_graph=True)
+        else:
+            disc_loss.backward()
+        d_optimizer.step()
+        
+        if current_iteration % disc_train_count == 0:
+            used_samples += current_bs
+            # do another forward pass on fake images to train generator
+            gen_predict = discriminator(gen_imgs, step=step, alpha=alpha).mean()
+            # g loss - maximize d(f)
+            gen_loss = -gen_predict
+            generator.zero_grad()
+            gen_loss.backward()
+            g_optimizer.step()
+
+        if current_iteration % 1_000 == 0:
+            g_losses.append((real_predict - fake_predict).detach().item())
+            d_losses.append(disc_loss.detach().item())
+            if current_iteration % 5_000 == 0:
                 generate_and_save_images(current_iteration, preview_noise, generator, alpha, step)
-                used_samples = 0
-                step += 1
-                # break training loop after last step (64x64) is completed
-                if step > max_steps:
-                    step = max_steps 
-                    break
-                adjust_lr(d_optimizer, lr[step])
-                adjust_lr(g_optimizer, lr[step])
-                data = new_dataloader(batch_size[step], curr_res)
-                mfid_batch = next(iter(data))[0].cuda().float()
-                loader = iter(data)
-
-            try:
-                batch = next(loader)
-            except (NameError, StopIteration):
-                loader = iter(data)
-                batch = next(loader)
-
-            # train discriminator on real images
-            real_images = batch[0].cuda().float()
-            current_bs = real_images.shape[0]
-            real_predict = discriminator(real_images, step=step, alpha=alpha).mean()
-
-            # random noise vector sampling values of gaussian distribution
-            gen_noise = torch.randn(current_bs, noise_dim).cuda()
-            gen_imgs = generator(gen_noise, step=step, alpha=alpha)
-
-            fake_predict = discriminator(gen_imgs, step=step, alpha=alpha).mean()
-
-            # wgan-gp loss for discriminator - maximize (d(r) - d(f)) -> wasserstein distance
-            gp = gradient_penalty(discriminator, real_images, gen_imgs, step, device=device, alpha=alpha)
-            disc_loss = -(real_predict - fake_predict) + (GRAD_VAL * gp)
-
-            discriminator.zero_grad()
-            if current_iteration % disc_train_count == 0:
-                disc_loss.backward(retain_graph=True)
-            else:
-                disc_loss.backward()
-            d_optimizer.step()
-            
-            if current_iteration % disc_train_count == 0:
-                used_samples += current_bs
-                # do another forward pass on fake images to train generator
-                gen_predict = discriminator(gen_imgs, step=step, alpha=alpha).mean()
-                # g loss - maximize d(f)
-                gen_loss = -gen_predict
-                generator.zero_grad()
-                gen_loss.backward()
-                g_optimizer.step()
-
-            if current_iteration % 1_000 == 0:
-                g_losses.append((real_predict - fake_predict).detach().item())
-                d_losses.append(disc_loss.detach().item())
-                if current_iteration % 5_000 == 0:
-                    generate_and_save_images(current_iteration, preview_noise, generator, alpha, step)
-                    plot_losses(g_losses, d_losses)
-                    mfid = calcMFID(mfid_batch) 
-                    samples = format_large_nums(used_samples)
-                    iter_nr = format_large_nums(current_iteration)
-                    print(f"[{iter_nr}] Resolution: {curr_res}x{curr_res}, loss_MFID: {mfid}, Samples: {samples}, alpha: {alpha}, Time: {(time.time()-start) // 60} minutes")
+                plot_losses(g_losses, d_losses)
+                mfid = calcMFID(mfid_batch) 
+                samples = format_large_nums(used_samples)
+                iter_nr = format_large_nums(current_iteration)
+                print(f"[{iter_nr}] Resolution: {curr_res}x{curr_res}, loss_MFID: {mfid}, Samples: {samples}, alpha: {alpha}, Time: {(time.time()-start) // 60} minutes")
     print(f"Training took {(time.time()-start) // 60} minutes.")
 
 if __name__ == "__main__":

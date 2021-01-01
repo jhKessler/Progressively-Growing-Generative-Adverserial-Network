@@ -35,7 +35,7 @@ def adjust_lr(optimizer, lr):
         group['lr'] = lr * 0.1
 
 def new_dataloader(batch_size, img_size):
-    data_path = r"C:\Users\Johnny\Desktop\PROGAN\img_align_celeba"
+    data_path = r"C:\Users\Johnny\Desktop\PROGAN\generative-dog-images\cropped"
     data = dset.ImageFolder(root=data_path,
                                 transform=
                                 transforms.Compose([
