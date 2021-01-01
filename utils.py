@@ -1,9 +1,14 @@
+import os
+import numpy as np
 import torch
 import torch.nn as nn
 import torchvision.datasets as dset
 from torch.utils.data import DataLoader
+from torchvision.utils import save_image, make_grid
+import torchvision.utils as vutils
 from torchvision import transforms
 import matplotlib.pyplot as plt
+
 
 def gradient_penalty(disc, real_images, fake_images, step, alpha, device="cpu"):
     bs, channels, height, width = real_images.shape
@@ -49,7 +54,7 @@ def new_dataloader(batch_size, img_size):
     loader = DataLoader(data, batch_size=batch_size, shuffle=True, num_workers=4)
     return loader
 
-def large_num_period(num):
+def format_large_nums(num):
     return "{:,}".format(num).replace(",", ".")
 
 def plot_losses(g_losses, d_losses):
@@ -62,3 +67,37 @@ def plot_losses(g_losses, d_losses):
     plt.legend()
     plt.savefig("losses")
     plt.close()
+
+# generate images when training is completed
+def generate_final_images(model, alpha, noise_dim, num=128):
+    image_folder = r"C:\Users\Johnny\Desktop\PROGAN\final_images"
+
+    with torch.no_grad():
+        noise = torch.randn(num, noise_dim).cuda()
+        images = model(noise, step=step, alpha=alpha).detach().cpu()
+
+    for i in range(images.shape[0]):
+        image = images[i]
+        save_image(image,
+                   os.path.join(image_folder, f"image{i}.jpg"),
+                   normalize=True,
+                   range=(-1, 1))
+
+# generate intermediate imgs for progress gif
+def generate_and_save_images(iteration, noise, model, alpha, step):
+    fake_folder = r"C:\Users\Johnny\Desktop\PROGAN\intermediate_images"
+    fake_img_path = os.path.join(fake_folder, f"iteration{iteration}resolution{get_resolution(step)}x{get_resolution(step)}")
+
+    with torch.no_grad():
+        images = model(noise, step=step, alpha=alpha).detach().cpu()
+        images = np.transpose(vutils.make_grid(images, padding=2, normalize=True), (1,2,0))
+
+    plt.figure(figsize=(8,8))
+    plt.axis("off")
+    plt.title("Training Images")
+    plt.imshow(images)
+    plt.savefig(fake_img_path)
+    plt.close()
+
+def get_resolution(step):
+    return 4 * (2**step)
