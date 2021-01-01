@@ -1,14 +1,14 @@
 # Progressively Growing Generative Adverserial Network
 ![](Generated_imgs.png)
-#### Generative Adverserial Networks are a relatively young branch of Machine Learning, using Neural Networks to generate new Datapoints from a certain distribution. The technology was first introduced to the public by Ian Goodfellow in 2014 (https://arxiv.org/abs/1406.2661). And has seen a steady increase in effectiveness over the last Years, especially in the area of image generation, with papers such as [StyleGAN](https://arxiv.org/abs/1812.04948) and [ProGAN](https://arxiv.org/abs/1710.10196) by Nvidia Researchers, that this implementation is based on.
+#### Generative Adverserial Networks are a relatively young branch of Machine Learning, using Neural Networks to generate new Datapoints from a certain distribution. The technology was first introduced to the public by Ian Goodfellow in 2014 (https://arxiv.org/abs/1406.2661). And has seen a steady increase in effectiveness over the last years, especially in the area of image generation, with papers such as [StyleGAN](https://arxiv.org/abs/1812.04948) and [ProGAN](https://arxiv.org/abs/1710.10196) by Nvidia Researchers that this implementation is based on.
 #
 ## The overlying principle of Generative Adverserial Networks, as proposed by Goodfellow in 2014, works like this:
 To start out we define 2 Neural Networks (Often Convolutional Neural Networks): 
 
-1. The first Network is trained to classify if a given datapoint (e.g. image) is from a dataset of real data
+1. The first network is trained to classify if a given datapoint (e.g. image) is from a dataset of real data
 or a generated one (this network is commonly called Discriminator or Critic), it gets fed an image as input and spits out a number, indicating whether the network thinks the datapoint is real or not.
 
-2. The second Network (commonly called Generator) gets fed random multidimensional noise, often with values of the uniform or gaussian distribution, and upscales this noise to output an image. It gets trained to fool the Discriminator network to classify it's images as real.
+2. The second network (commonly called Generator) gets fed random multidimensional noise, often with values of the uniform or gaussian distribution, and upscales this noise to output an image. It gets trained to fool the Discriminator network to classify it's images as real.
 
 Due to the competition between the two networks, they are forced to improve, ideally leading to a Generator network that produces Images that are indestinguishable from real images.
 Oftentimes these networks are inverse versions of each other, comparable to Encoders and Decoders.
