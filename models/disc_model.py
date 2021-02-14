@@ -14,6 +14,7 @@ class DiscBlock(nn.Module):
         self.pool = nn.AvgPool2d(kernel_size=2)
 
     def forward(self, x):
+        
         x = self.conv1(x)
         x = self.norm1(x)
         x = self.leaky(x)

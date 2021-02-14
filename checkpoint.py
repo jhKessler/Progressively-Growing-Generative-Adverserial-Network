@@ -13,7 +13,16 @@ class Checkpoint(object):
         if load_id:
             assert load_id in self.__checkpoint_ids, "The load-id you entered is invalid"
         elif save_dict:
-            for k in ["generator", "g_optimizer", "discriminator", "d_optimizer", "step", "iteration", "samples", "time"]:
+            for k in [
+                "generator", 
+                "g_optimizer", 
+                "discriminator", 
+                "d_optimizer", 
+                "step", 
+                "iteration", 
+                "samples", 
+                "time", 
+                "preview_noise"]:
                 assert k in save_dict.keys(), f"Missing dict_value \"{k}\""
 
         # give id to checkpoint

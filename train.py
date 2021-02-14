@@ -50,6 +50,8 @@ if checkpoint is None or reset:
 	discriminator = Discriminator().to(device)
 	d_optimizer = optim.Adam(discriminator.parameters(), lr=lr[step], betas=betas)
 
+	preview_noise = torch.randn(64, noise_dim).to(device)
+
 	start_iter = 0
 
 else:
@@ -69,8 +71,9 @@ else:
 
 	start_iter = val_dict["iteration"]
 
-# fixed noise for showing intermediate training progress
-preview_noise = torch.randn(64, noise_dim).to(device)
+	preview_noise = val_dict["preview_noise"]
+
+	del val_dict
 
 def train(iterations=5_000_000):
 	global step, checkpoint, used_samples, start
@@ -172,7 +175,8 @@ def train(iterations=5_000_000):
 					"step" : step, 
 					"iteration" : current_iteration,
 					"samples" : used_samples,
-					"time" : (time.time()-start)
+					"time" : (time.time()-start),
+					"preview_noise" : preview_noise
 				}
 
 			if checkpoint is None:
