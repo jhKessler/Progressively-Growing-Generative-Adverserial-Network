@@ -22,37 +22,42 @@ betas = (0.0, 0.99)
 # random noise dimensions
 noise_dim = 256
 
-start_step = 0
+start_step = 1
 max_steps = 4
 assert (0 <= start_step <= 5) and (0 <= max_steps <= 5), "Please enter valid step-values (0-5)"
-dataset = 2 # 1 = CELEBA
+
+# wgan-gp values
+disc_train_count = 3
+GRAD_VAL = 10
 
 fade_size = 800_000
 phase_size = fade_size * 3
 
-lr = [0.001, 0.002, 0.003, 0.004, 0.005, 0.006]
+lr = [0.007, 0.01, 0.01, 0.01, 0.01, 0.006]
 
 # set to None if starting a new model, else enter checkpoint id
 checkpoint = 2
 # set to true when overwriting a checkpoint that you have specified above with a new model
-reset = False
+reset = True
 assert not (checkpoint is None and reset), "Please specify a valid checkpoint to overwrite"
 
 # model definitions
 if checkpoint is None or reset:
+
 	step = start_step
 	used_samples = 0
-	start = time.time()
 
 	generator = Generator(noise_dim).to(device)
 	g_optimizer = optim.Adam(generator.parameters(), lr=lr[step], betas=betas)
 
 	discriminator = Discriminator().to(device)
 	d_optimizer = optim.Adam(discriminator.parameters(), lr=lr[step], betas=betas)
-
-	preview_noise = torch.randn(64, noise_dim).to(device)
-
+	
+	start = time.time()
+	dataset = 1 # 1 = CELEBA
 	start_iter = 0
+	loss_type = 1 # 1 = wgan-gp
+	preview_noise = torch.randn(64, noise_dim).to(device)
 
 else:
 	checkpoint = Checkpoint(load_id=checkpoint)
@@ -66,17 +71,17 @@ else:
 
 	discriminator = val_dict["discriminator"]
 	d_optimizer = val_dict["d_optimizer"]
-
+	
 	start = time.time() - val_dict["time"]
-
+	dataset = val_dict["dataset"]
 	start_iter = val_dict["iteration"]
-
+	loss_type = val_dict["loss_type"]
 	preview_noise = val_dict["preview_noise"]
 
 	del val_dict
 
 def train(iterations=5_000_000):
-	global step, checkpoint, used_samples, start
+	global step, checkpoint, used_samples, start, loss_type, disc_train_count, dataset
 
 	data = new_dataloader(batch_size[step], get_resolution(step), dataset)
 	curr_res = get_resolution(step)
@@ -84,6 +89,8 @@ def train(iterations=5_000_000):
 	toggle_grad(discriminator, True)
 	toggle_grad(generator, True)
 
+	adjust_lr(d_optimizer, lr[step])
+	adjust_lr(g_optimizer, lr[step])
 	print(f"Generator-Parameters: {count_parameters(generator)}")
 	print(f"Discriminator-Parameters: {count_parameters(discriminator)}")
 	print(f"Training on {torch.cuda.get_device_name(device)}")
@@ -112,8 +119,9 @@ def train(iterations=5_000_000):
 			data = new_dataloader(batch_size[step], curr_res, dataset)
 			loader = iter(data)
 
-		toggle_grad(discriminator, True)
-		toggle_grad(generator, False)
+		if loss_type == 2:
+			toggle_grad(discriminator, True)
+			toggle_grad(generator, False)
 		
 		alpha = min([1, (used_samples + 1) /  fade_size]) if step > start_step else 1
 
@@ -129,35 +137,60 @@ def train(iterations=5_000_000):
 		current_bs = real_images.shape[0]
 		real_images.requires_grad = True
 		real_predict = discriminator(real_images, step=step, alpha=alpha)
-		real_loss = F.softplus(-real_predict.mean())
-		real_loss.backward(retain_graph=True)
-		
-		gp = gradient_penalty(discriminator, real_predict, real_images, step, alpha, device=device)
-		gp.backward()
 
 		# random noise vector sampling values of gaussian distribution
 		gen_noise = torch.randn(current_bs, noise_dim).to(device)
 		gen_imgs = generator(gen_noise, step=step, alpha=alpha)
-
-		# train discriminator on fake images
 		fake_predict = discriminator(gen_imgs, step=step, alpha=alpha)
-		fake_loss = F.softplus(fake_predict.mean())
-		fake_loss.backward()
+		
+		# r1 loss
+		if loss_type == 2:
+			real_loss = F.softplus(-real_predict.mean())
+			real_loss.backward(retain_graph=True)
+			gp = r1_gradient_penalty(discriminator, real_predict, real_images, step, alpha, device=device)
+			gp.backward()
+
+			# train discriminator on fake images
+			fake_loss = F.softplus(fake_predict.mean())
+			fake_loss.backward()
+
+		# wgan-gp loss
+		elif loss_type == 1:
+			gp = wgan_gradient_penalty(discriminator, real_images, gen_imgs, step, device=device, alpha=alpha)
+			disc_loss = -(real_predict.mean() - fake_predict.mean()) + (GRAD_VAL * gp)
+
+			discriminator.zero_grad()
+			if current_iteration % disc_train_count == 0:
+				disc_loss.backward(retain_graph=True)
+			else:
+				disc_loss.backward()
 
 		d_optimizer.step()
 		used_samples += current_bs
 
-		toggle_grad(generator, True)
-		toggle_grad(discriminator, False)
+		# r1 loss
+		if loss_type == 2:
+			toggle_grad(generator, True)
+			toggle_grad(discriminator, False)
 
-		# do another forward pass on fake images to train generator
-		gen_noise = torch.randn(current_bs, noise_dim).to(device)
-		gen_imgs = generator(gen_noise, step=step, alpha=alpha)
-		gen_predict = discriminator(gen_imgs, step=step, alpha=alpha).mean()
-		gen_loss = -gen_predict
-		generator.zero_grad()
-		gen_loss.backward()
-		g_optimizer.step()
+			# do another forward pass on fake images to train generator
+			gen_noise = torch.randn(current_bs, noise_dim).to(device)
+			gen_imgs = generator(gen_noise, step=step, alpha=alpha)
+			gen_predict = discriminator(gen_imgs, step=step, alpha=alpha).mean()
+			gen_loss = F.softplus(-gen_predict)
+			generator.zero_grad()
+			gen_loss.backward()
+			g_optimizer.step()
+
+		# wgan-gp loss
+		elif loss_type == 1 and current_iteration % disc_train_count == 0:
+			gen_predict = discriminator(gen_imgs, step=step, alpha=alpha).mean()
+
+			# g loss - maximize d(f)
+			gen_loss = -gen_predict
+			generator.zero_grad()
+			gen_loss.backward()
+			g_optimizer.step()
 
 		if used_samples % 100_000 < current_bs:
 			if used_samples % (phase_size // 8) < current_bs:
@@ -176,8 +209,10 @@ def train(iterations=5_000_000):
 					"iteration" : current_iteration,
 					"samples" : used_samples,
 					"time" : (time.time()-start),
-					"preview_noise" : preview_noise
-				}
+					"preview_noise" : preview_noise,
+					"loss_type" : loss_type,
+					"dataset" : dataset
+							}
 
 			if checkpoint is None:
 				checkpoint = Checkpoint(save_dict=model_dict)

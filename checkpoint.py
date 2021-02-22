@@ -22,7 +22,9 @@ class Checkpoint(object):
                 "iteration", 
                 "samples", 
                 "time", 
-                "preview_noise"]:
+                "preview_noise",
+                "loss_type",
+                "dataset"]:
                 assert k in save_dict.keys(), f"Missing dict_value \"{k}\""
 
         # give id to checkpoint

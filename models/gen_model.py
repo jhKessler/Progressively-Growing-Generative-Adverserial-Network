@@ -43,8 +43,8 @@ class Generator(nn.Module):
         self.noise_dim = noise_dim
         self.tanh = nn.Tanh()
         self.inp = GenBlock(in_channels=self.noise_dim, out_channels=256, upsample=False, inp=True) # 4x4
-        self.conv1 = GenBlock(in_channels=256, out_channels=256) # 8x8
-        self.conv2 = GenBlock(in_channels=256, out_channels=128) # 16x16
+        self.conv1 = GenBlock(in_channels=256, out_channels=128) # 8x8
+        self.conv2 = GenBlock(in_channels=128, out_channels=128) # 16x16
         self.conv3 = GenBlock(in_channels=128, out_channels=128) # 32x32
         self.conv4 = GenBlock(in_channels=128, out_channels=128) # 64x64
         self.conv5 = GenBlock(in_channels=128, out_channels=128) # 128x128
@@ -59,7 +59,7 @@ class Generator(nn.Module):
         
         self.torgb = nn.ModuleList([
                             nn.ConvTranspose2d(in_channels=256, out_channels=3, kernel_size=1, stride=1, bias=gen_bias), # 4x4
-                            nn.ConvTranspose2d(in_channels=256, out_channels=3, kernel_size=1, stride=1, bias=gen_bias), # 8x8
+                            nn.ConvTranspose2d(in_channels=128, out_channels=3, kernel_size=1, stride=1, bias=gen_bias), # 8x8
                             nn.ConvTranspose2d(in_channels=128, out_channels=3, kernel_size=1, stride=1, bias=gen_bias), # 16x16
                             nn.ConvTranspose2d(in_channels=128, out_channels=3, kernel_size=1, stride=1, bias=gen_bias), # 32x32
                             nn.ConvTranspose2d(in_channels=128, out_channels=3, kernel_size=1, stride=1, bias=gen_bias), # 64x64

@@ -10,7 +10,7 @@ from models.gen_model import Generator
 from models.disc_model import Discriminator
 import matplotlib.pyplot as plt
 
-def gradient_penalty(disc, real_predict, real_images, step, alpha, device="cpu"):
+def r1_gradient_penalty(disc, real_predict, real_images, step, alpha, device="cpu"):
     grad_real = torch.autograd.grad(outputs=real_predict.sum(),
                          inputs=real_images,
                          create_graph=True)[0]
@@ -18,6 +18,24 @@ def gradient_penalty(disc, real_predict, real_images, step, alpha, device="cpu")
                                     -1).norm(2, dim=1)**2).mean()
     grad_penalty = 10 / 2 * grad_penalty
     return grad_penalty
+
+# gradient penalty for discriminator based on wgan-gp paper "Improved Training of Wasserstein GANs" (https://arxiv.org/abs/1704.00028)
+def wgan_gradient_penalty(disc, real_images, fake_images, step, alpha, device="cpu"):
+    bs, channels, height, width = real_images.shape
+    eps = torch.rand(bs, 1, 1, 1).to(device).repeat(1, channels, height, width)
+    # merge fake and real images
+    merged_images = real_images * eps + fake_images * (1 - eps)
+    merged_predict = disc(merged_images, step=step, alpha=alpha)
+    gradient_penalty = torch.autograd.grad(
+        inputs=merged_images,
+        outputs=merged_predict,
+        grad_outputs=torch.ones_like(merged_predict),
+        create_graph=True,
+        retain_graph=True)[0]
+    gradient_penalty = gradient_penalty.view(bs, -1)
+    gradient_penalty = gradient_penalty.norm(2, dim=1)
+    gradient_penalty = torch.mean((gradient_penalty - 1) ** 2)
+    return gradient_penalty
 
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -53,7 +71,7 @@ def generate_and_save_images(samples, noise, model, alpha, step):
 
     plt.figure(figsize=(8,8))
     plt.axis("off")
-    plt.title("Training Images")
+    plt.title("Training Progress")
     plt.imshow(images)
     plt.savefig(fake_img_path)
     plt.close()
