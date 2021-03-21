@@ -6,44 +6,41 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
-from models.gen_model import Generator
-from models.disc_model import Discriminator
+from models.generator import Generator
+from models.discriminator import Discriminator
 from checkpoint import Checkpoint
 from utils import *
 
 # seed for reproducability
-torch.manual_seed(42)
+torch.manual_seed(41)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # training parameters
-batch_size = [64, 64, 64, 32, 16, 4]
+batch_size = [64, 64, 64, 32, 16, 8]
 # beta coeffs for adam optimizer
 betas = (0.0, 0.99)
 # random noise dimensions
-noise_dim = 256
-
-start_step = 1
+noise_dim = 128
+start_step = 0
 max_steps = 4
 assert (0 <= start_step <= 5) and (0 <= max_steps <= 5), "Please enter valid step-values (0-5)"
-
 # wgan-gp values
-disc_train_count = 3
+disc_train_count = 1
 GRAD_VAL = 10
 
 fade_size = 800_000
 phase_size = fade_size * 3
 
-lr = [0.007, 0.01, 0.01, 0.01, 0.01, 0.006]
+lr = [0.001, 0.002, 0.003, 0.004, 0.005, 0.006]
 
 # set to None if starting a new model, else enter checkpoint id
 checkpoint = 2
 # set to true when overwriting a checkpoint that you have specified above with a new model
-reset = True
+reset = False
 assert not (checkpoint is None and reset), "Please specify a valid checkpoint to overwrite"
 
 # model definitions
 if checkpoint is None or reset:
-
 	step = start_step
 	used_samples = 0
 
@@ -54,9 +51,9 @@ if checkpoint is None or reset:
 	d_optimizer = optim.Adam(discriminator.parameters(), lr=lr[step], betas=betas)
 	
 	start = time.time()
-	dataset = 1 # 1 = CELEBA
+	dataset = 2 # 1 = CELEBA | 2 = Stanford Dogs
 	start_iter = 0
-	loss_type = 1 # 1 = wgan-gp
+	loss_type = 1 # 1 = wgan-gp | 2 = GAN
 	preview_noise = torch.randn(64, noise_dim).to(device)
 
 else:
@@ -91,8 +88,8 @@ def train(iterations=5_000_000):
 
 	adjust_lr(d_optimizer, lr[step])
 	adjust_lr(g_optimizer, lr[step])
-	print(f"Generator-Parameters: {count_parameters(generator)}")
-	print(f"Discriminator-Parameters: {count_parameters(discriminator)}")
+	print(f"Generator-Parameters: {format_large_nums(count_parameters(generator))}")
+	print(f"Discriminator-Parameters: {format_large_nums(count_parameters(discriminator))}")
 	print(f"Training on {torch.cuda.get_device_name(device)}")
 	print("Starting Training Loop...")
 	print(f"Training started with Resolution {curr_res}x{curr_res} and {used_samples} samples used (Time: {(time.time()-start) // 60} minutes)")
@@ -101,12 +98,12 @@ def train(iterations=5_000_000):
 		gc.collect()
 
 		# switch to next phase after current phase is completed
-		if used_samples > phase_size and step != max_steps:
+		if used_samples > (phase_size if step != start_step else phase_size // 2) and step != max_steps:
 			print(f"Training for Resolution {curr_res}x{curr_res} done after {(time.time()-start) // 60} minutes, Used Samples: {used_samples}")
 			used_samples = 0
 			step += 1
 
-			# break training loop after last step (64x64) is completed
+			# break training loop after last step is completed
 			if step > max_steps:
 				step = max_steps 
 				break
@@ -143,33 +140,39 @@ def train(iterations=5_000_000):
 		gen_imgs = generator(gen_noise, step=step, alpha=alpha)
 		fake_predict = discriminator(gen_imgs, step=step, alpha=alpha)
 		
-		# r1 loss
-		if loss_type == 2:
+		# wgan-gp loss
+		if loss_type == 1:
+			gp = wgan_gradient_penalty(discriminator, real_images, gen_imgs, step, device=device, alpha=alpha)
+			disc_loss = -(real_predict.mean() - fake_predict.mean()) + (GRAD_VAL * gp)
+
+			discriminator.zero_grad()
+			disc_loss.backward(retain_graph=(current_iteration % disc_train_count == 0))
+		# GAN loss
+		elif loss_type == 2:
 			real_loss = F.softplus(-real_predict.mean())
 			real_loss.backward(retain_graph=True)
-			gp = r1_gradient_penalty(discriminator, real_predict, real_images, step, alpha, device=device)
+			gp = gan_gradient_penalty(discriminator, real_predict, real_images, step, alpha, device=device)
 			gp.backward()
 
 			# train discriminator on fake images
 			fake_loss = F.softplus(fake_predict.mean())
 			fake_loss.backward()
 
-		# wgan-gp loss
-		elif loss_type == 1:
-			gp = wgan_gradient_penalty(discriminator, real_images, gen_imgs, step, device=device, alpha=alpha)
-			disc_loss = -(real_predict.mean() - fake_predict.mean()) + (GRAD_VAL * gp)
-
-			discriminator.zero_grad()
-			if current_iteration % disc_train_count == 0:
-				disc_loss.backward(retain_graph=True)
-			else:
-				disc_loss.backward()
-
 		d_optimizer.step()
 		used_samples += current_bs
 
-		# r1 loss
-		if loss_type == 2:
+		# wgan-gp loss
+		if loss_type == 1 and current_iteration % disc_train_count == 0:
+			gen_predict = discriminator(gen_imgs, step=step, alpha=alpha).mean()
+
+			# g loss - maximize d(f)
+			gen_loss = -gen_predict
+			generator.zero_grad()
+			gen_loss.backward()
+			g_optimizer.step()
+
+		# GAN loss
+		elif loss_type == 2:
 			toggle_grad(generator, True)
 			toggle_grad(discriminator, False)
 
@@ -181,23 +184,14 @@ def train(iterations=5_000_000):
 			generator.zero_grad()
 			gen_loss.backward()
 			g_optimizer.step()
-
-		# wgan-gp loss
-		elif loss_type == 1 and current_iteration % disc_train_count == 0:
-			gen_predict = discriminator(gen_imgs, step=step, alpha=alpha).mean()
-
-			# g loss - maximize d(f)
-			gen_loss = -gen_predict
-			generator.zero_grad()
-			gen_loss.backward()
-			g_optimizer.step()
+		
+		if used_samples % (phase_size // 8 if step != start_step else phase_size // 16) < current_bs:
+				generate_and_save_images(used_samples, preview_noise, generator, alpha, step, cp_id=checkpoint.give_id())
 
 		if used_samples % 100_000 < current_bs:
-			if used_samples % (phase_size // 8) < current_bs:
-				generate_and_save_images(used_samples, preview_noise, generator, alpha, step)
 			samples = format_large_nums(used_samples)
 			iter_nr = format_large_nums(current_iteration)
-			print(f"[{iter_nr}] Resolution: {curr_res}x{curr_res}, Samples: {samples}, alpha: {alpha}, Time: {(time.time()-start) // 60} minutes")
+			print(f"[{iter_nr}] Resolution: {curr_res}x{curr_res}, Samples: {samples}, alpha: {alpha}, Time: {(time.time()-start) // 60} minutes, Generator Loss: {(real_predict.mean() - fake_predict.mean()).item()}")
 
 			# save progress
 			model_dict = {
@@ -217,7 +211,7 @@ def train(iterations=5_000_000):
 			if checkpoint is None:
 				checkpoint = Checkpoint(save_dict=model_dict)
 			else:
-				if type(checkpoint) == int:
+				if isinstance(checkpoint, int):
 					checkpoint = Checkpoint(load_id=checkpoint)
 				checkpoint.save(model_dict)
 			del model_dict

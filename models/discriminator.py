@@ -74,8 +74,8 @@ class Discriminator(nn.Module):
         self.conv2 = DiscBlock(in_channels=128, out_channels=128) # 64x64
         self.conv3 = DiscBlock(in_channels=128, out_channels=128) # 32x32
         self.conv4 = DiscBlock(in_channels=128, out_channels=128) # 16x16
-        self.conv5 = DiscBlock(in_channels=128, out_channels=256) # 8x8
-        self.outp = DecisionBlock(in_channels=256) # 4x4
+        self.conv5 = DiscBlock(in_channels=128, out_channels=128) # 8x8
+        self.outp = DecisionBlock(in_channels=128) # 4x4
         
         self.progression = [
             self.conv1,
@@ -86,7 +86,7 @@ class Discriminator(nn.Module):
         ]
         
         self.fromrgb = nn.ModuleList([
-            InpBlock(out_channels=256), # 4x4
+            InpBlock(out_channels=128), # 4x4
             InpBlock(out_channels=128), # 8x8
             InpBlock(out_channels=128), # 16x16
             InpBlock(out_channels=128), # 32x32
@@ -115,7 +115,5 @@ class Discriminator(nn.Module):
     def weights_init(self, layer):
             if type(layer) in [nn.Conv2d, nn.ConvTranspose2d]:
                 nn.init.kaiming_normal_(layer.weight)
-            if type(layer) == nn.BatchNorm2d:
-                nn.init.normal_(layer.weight.data, 1.0, 0.02)
             if type(layer) == nn.Linear:
                 nn.init.xavier_normal_(layer.weight)

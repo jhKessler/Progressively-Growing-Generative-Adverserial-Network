@@ -1,6 +1,6 @@
 import torch
 from checkpoint import Checkpoint
-from models.gen_model import Generator
+from models.generator import Generator
 from utils import generate_final_images
 
 def generate(num_images_to_generate, checkpoint_to_load):
