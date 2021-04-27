@@ -59,11 +59,9 @@ class Checkpoint(object):
     # give new checkpoint a valid _id
     def __set_id(self):
         loop_range = 1 if not self.__checkpoint_ids else max(self.__checkpoint_ids) + 2
-        for i in range(1, loop_range):
+        for i in range(1, loop_range+1):
             if i not in self.__checkpoint_ids:
-                new_id = i
-                break
-        return new_id
+                return i
 
     # save model_dict
     def save(self, save_dict):

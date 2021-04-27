@@ -20,7 +20,7 @@ batch_size = [64, 64, 64, 32, 16, 8]
 # beta coeffs for adam optimizer
 betas = (0.0, 0.99)
 # random noise dimensions
-noise_dim = 128
+noise_dim = 256
 start_step = 0
 max_steps = 4
 
@@ -32,12 +32,12 @@ GRAD_VAL = 10
 fade_size = 800_000
 phase_size = fade_size * 2
 
-lr = [0.001, 0.002, 0.003, 0.004, 0.005, 0.006]
+lr = [0.001, 0.001, 0.001, 0.001, 0.001, 0.001]
 
 # set to None if starting a new model, else enter checkpoint id
-checkpoint = None
+checkpoint = 1
 # set to true when overwriting a checkpoint that you have specified above with a new model
-reset = False
+reset = True
 assert not (checkpoint is None and reset), "Please specify a valid checkpoint to overwrite"
 
 # model definitions
