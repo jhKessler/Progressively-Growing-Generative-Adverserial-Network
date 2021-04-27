@@ -6,13 +6,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
-from models.generator import Generator
-from models.discriminator import Discriminator
+from models.generator.generator import Generator
+from models.discriminator.discriminator import Discriminator
 from checkpoint import Checkpoint
 from utils import *
 
 # seed for reproducability
-torch.manual_seed(41)
+torch.manual_seed(42)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # training parameters
@@ -23,18 +23,19 @@ betas = (0.0, 0.99)
 noise_dim = 128
 start_step = 0
 max_steps = 4
+
 assert (0 <= start_step <= 5) and (0 <= max_steps <= 5), "Please enter valid step-values (0-5)"
 # wgan-gp values
 disc_train_count = 1
 GRAD_VAL = 10
 
 fade_size = 800_000
-phase_size = fade_size * 3
+phase_size = fade_size * 2
 
 lr = [0.001, 0.002, 0.003, 0.004, 0.005, 0.006]
 
 # set to None if starting a new model, else enter checkpoint id
-checkpoint = 2
+checkpoint = None
 # set to true when overwriting a checkpoint that you have specified above with a new model
 reset = False
 assert not (checkpoint is None and reset), "Please specify a valid checkpoint to overwrite"
@@ -51,9 +52,9 @@ if checkpoint is None or reset:
 	d_optimizer = optim.Adam(discriminator.parameters(), lr=lr[step], betas=betas)
 	
 	start = time.time()
-	dataset = 2 # 1 = CELEBA | 2 = Stanford Dogs
+	dataset = "CELEBA" # CELEBA/Stanford Dogs
 	start_iter = 0
-	loss_type = 1 # 1 = wgan-gp | 2 = GAN
+	loss_type = "wgan" # wgan/GAN
 	preview_noise = torch.randn(64, noise_dim).to(device)
 
 else:
@@ -116,7 +117,7 @@ def train(iterations=5_000_000):
 			data = new_dataloader(batch_size[step], curr_res, dataset)
 			loader = iter(data)
 
-		if loss_type == 2:
+		if loss_type == "GAN":
 			toggle_grad(discriminator, True)
 			toggle_grad(generator, False)
 		
@@ -132,23 +133,24 @@ def train(iterations=5_000_000):
 		discriminator.zero_grad()
 		real_images = batch[0].to(device).float()
 		current_bs = real_images.shape[0]
+
 		real_images.requires_grad = True
 		real_predict = discriminator(real_images, step=step, alpha=alpha)
 
 		# random noise vector sampling values of gaussian distribution
-		gen_noise = torch.randn(current_bs, noise_dim).to(device)
+		gen_noise = torch.randn(current_bs, noise_dim).cuda()
 		gen_imgs = generator(gen_noise, step=step, alpha=alpha)
 		fake_predict = discriminator(gen_imgs, step=step, alpha=alpha)
-		
+
 		# wgan-gp loss
-		if loss_type == 1:
+		if loss_type == "wgan":
 			gp = wgan_gradient_penalty(discriminator, real_images, gen_imgs, step, device=device, alpha=alpha)
 			disc_loss = -(real_predict.mean() - fake_predict.mean()) + (GRAD_VAL * gp)
 
 			discriminator.zero_grad()
 			disc_loss.backward(retain_graph=(current_iteration % disc_train_count == 0))
 		# GAN loss
-		elif loss_type == 2:
+		elif loss_type == "GAN":
 			real_loss = F.softplus(-real_predict.mean())
 			real_loss.backward(retain_graph=True)
 			gp = gan_gradient_penalty(discriminator, real_predict, real_images, step, alpha, device=device)
@@ -162,7 +164,7 @@ def train(iterations=5_000_000):
 		used_samples += current_bs
 
 		# wgan-gp loss
-		if loss_type == 1 and current_iteration % disc_train_count == 0:
+		if loss_type == "wgan" and current_iteration % disc_train_count == 0:
 			gen_predict = discriminator(gen_imgs, step=step, alpha=alpha).mean()
 
 			# g loss - maximize d(f)
@@ -172,7 +174,7 @@ def train(iterations=5_000_000):
 			g_optimizer.step()
 
 		# GAN loss
-		elif loss_type == 2:
+		elif loss_type == "GAN":
 			toggle_grad(generator, True)
 			toggle_grad(discriminator, False)
 
@@ -184,10 +186,8 @@ def train(iterations=5_000_000):
 			generator.zero_grad()
 			gen_loss.backward()
 			g_optimizer.step()
-		
-		if used_samples % (phase_size // 8 if step != start_step else phase_size // 16) < current_bs:
-				generate_and_save_images(used_samples, preview_noise, generator, alpha, step, cp_id=checkpoint.give_id())
 
+		# print training progress to console
 		if used_samples % 100_000 < current_bs:
 			samples = format_large_nums(used_samples)
 			iter_nr = format_large_nums(current_iteration)
@@ -216,6 +216,9 @@ def train(iterations=5_000_000):
 				checkpoint.save(model_dict)
 			del model_dict
 
+		# generate intermediate images
+		if used_samples % (phase_size // 8 if step != start_step else phase_size // 16) < current_bs:
+				generate_and_save_images(used_samples, preview_noise, generator, alpha, step, cp_id=checkpoint.give_id())
 
 if __name__ == "__main__":
 	train()

@@ -1,6 +1,8 @@
 import os
 import pickle
 import torch
+from models.generator.generator import Generator
+from models.discriminator.discriminator import Discriminator
 
 class Checkpoint(object):
 
